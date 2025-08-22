@@ -69,20 +69,55 @@ const argv = yargs(hideBin(process.argv))
     description: "Skip adding sequential ID field to each row",
     default: false,
   })
+  .option("no-camel-case", {
+    type: "boolean",
+    description: "Skip converting column names to camelCase",
+    default: false,
+  })
   .example("$0 data.xlsx", "Convert Excel to JSON")
   .example("$0 data.xlsx --pretty", "Convert with pretty formatting")
   .example('$0 data.xlsx --sheet "Sales" -o sales.json', "Convert specific sheet")
+  .example("$0 data.xlsx --no-camel-case", "Keep original column names")
   .example("$0 data.xlsx --no-id", "Convert without adding ID field")
   .example("$0 data.xlsx --all-sheets --pretty", "Convert all sheets")
   .help().argv;
 
 /**
+ * Convert string to camelCase
+ * @param {string} str - String to convert
+ * @returns {string} camelCased string
+ */
+function toCamelCase(str) {
+  return (
+    str
+      .toString()
+      .trim()
+      // Replace multiple spaces with single space
+      .replace(/\s+/g, " ")
+      // Split by spaces, hyphens, underscores, and other separators
+      .split(/[\s\-_\.]+/)
+      // Filter out empty strings
+      .filter((word) => word.length > 0)
+      // Convert to camelCase
+      .map((word, index) => {
+        // First word stays lowercase, others get capitalized
+        if (index === 0) {
+          return word.toLowerCase();
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join("")
+  );
+}
+
+/**
  * Clean and process sheet data
  * @param {Array} data - Raw sheet data
  * @param {boolean} addId - Whether to add sequential ID field
+ * @param {boolean} camelCase - Whether to convert column names to camelCase
  * @returns {Array} Processed data
  */
-function processSheetData(data, addId = true) {
+function processSheetData(data, addId = true, camelCase = true) {
   if (!data || data.length === 0) return [];
 
   // Remove empty rows
@@ -100,8 +135,18 @@ function processSheetData(data, addId = true) {
     }
 
     for (let key in row) {
-      // Clean column names (remove extra spaces, make consistent)
-      const cleanKey = key.toString().trim().replace(/\s+/g, " ");
+      // Clean and format column names
+      let cleanKey;
+      if (camelCase) {
+        cleanKey = toCamelCase(key);
+      } else {
+        // Just clean up spaces if camelCase is disabled
+        cleanKey = key.toString().trim().replace(/\s+/g, " ");
+      }
+
+      // Skip empty column names
+      if (!cleanKey) continue;
+
       // Convert cell values to appropriate types
       let value = row[key];
 
@@ -147,6 +192,7 @@ function convertExcelToJson(filePath, options = {}) {
 
     let result = {};
     const addId = !options.noId; // Add ID unless specifically disabled
+    const camelCase = !options.noCamelCase; // Use camelCase unless specifically disabled
 
     if (options.allSheets) {
       // Convert all sheets
@@ -156,7 +202,7 @@ function convertExcelToJson(filePath, options = {}) {
           header: options.header,
           defval: null,
         });
-        result[sheetName] = processSheetData(rawData, addId);
+        result[sheetName] = processSheetData(rawData, addId, camelCase);
       });
     } else {
       // Convert specific sheet or first sheet
@@ -171,7 +217,7 @@ function convertExcelToJson(filePath, options = {}) {
         header: options.header,
         defval: null,
       });
-      result = processSheetData(rawData, addId);
+      result = processSheetData(rawData, addId, camelCase);
     }
 
     return {
@@ -218,6 +264,7 @@ async function main() {
     "list-sheets": listSheets,
     header,
     "no-id": noId,
+    "no-camel-case": noCamelCase,
   } = argv;
 
   // Convert Excel to JSON
@@ -227,6 +274,7 @@ async function main() {
     listSheets,
     header,
     noId,
+    noCamelCase,
   });
 
   if (!result.success) {
